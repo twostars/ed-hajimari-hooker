@@ -1,11 +1,12 @@
 #include "stdafx.h"
 #include "TextParser.h"
+#include "string_conv.h"
 
 thread_local char oldstr[MSG_BUF_SIZE + 1] = {};
-thread_local wchar_t wstr[MSG_BUF_SIZE + 1] = {};
-thread_local char utf8str[MSG_BUF_SIZE + 1] = {};
+thread_local std::wstring wstr;
+thread_local std::string utf8str;
 
-void TextParser::parse(const char* buf)
+void TextParser::parse(const char buf[RPM_BUF_SIZE])
 {
 	if (defer_until_address != 0
 		&& buf_current_address < defer_until_address)
@@ -90,7 +91,7 @@ void TextParser::parse(const char* buf)
 	}
 }
 
-void TextParser::parse_color(const char* buf)
+void TextParser::parse_color(const char input[RPM_BUF_SIZE])
 {
 	unsigned int offset = 1;
 	unsigned int start_offset = offset;
@@ -98,25 +99,25 @@ void TextParser::parse_color(const char* buf)
 
 	size_t length = (offset - start_offset);
 	std::vector<char> tmpBuffer(length + 1U, 0);
-	memcpy(&tmpBuffer[0], buf + start_offset, length);
+	memcpy(&tmpBuffer[0], input + start_offset, length);
 
 	color = std::strtoull(&tmpBuffer[0], nullptr, 16);
 	defer_until_address = buf_current_address + length + 1;
 }
 
-void TextParser::parse_hashcode(const char* buf)
+void TextParser::parse_hashcode(const char input[RPM_BUF_SIZE])
 {
 	unsigned int offset = 1;
 	unsigned int start_offset = offset;
-	while(isdigit(buf[offset]))
+	while(isdigit(input[offset]))
 		++offset;
 
 	size_t length = (offset - start_offset);
 	std::vector<char> tmpBuffer(length + 1U, 0);
-	memcpy(&tmpBuffer[0], buf + start_offset, length);
+	memcpy(&tmpBuffer[0], input + start_offset, length);
 
 	// now i is at the offset of the first non-digit character, so we can see whether we parsed a face or a character id.
-	char code = buf[offset];
+	char code = input[offset];
 	switch (code)
 	{
 		case 'P':
@@ -160,17 +161,8 @@ void TextParser::flush_message_buffer()
 	const UINT CP_SHIFT_JIS = 932;
 	const DWORD LCID_JA_JA = 1041;
 
-	int wchars_num = MultiByteToWideChar(CP_UTF8, 0, msg_buf, -1, nullptr, 0);
-	if (wchars_num > MSG_BUF_SIZE)
-		return;
-
-	MultiByteToWideChar(CP_UTF8, 0, msg_buf, -1, wstr, wchars_num);
-
-	int utf8chars_num = WideCharToMultiByte(CP_SHIFT_JIS, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
-	if (utf8chars_num > MSG_BUF_SIZE)
-		return;
-
-	WideCharToMultiByte(CP_SHIFT_JIS, 0, wstr, wchars_num, utf8str, utf8chars_num, nullptr, nullptr);
+	wstr = MultiByteToWideChar(CP_UTF8, msg_buf, msg_offset);
+	utf8str = WideCharToMultiByte(CP_SHIFT_JIS, wstr);
 
 	HGLOBAL locale_ptr = GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
 	DWORD japanese = LCID_JA_JA;
@@ -178,10 +170,10 @@ void TextParser::flush_message_buffer()
 	GlobalUnlock(locale_ptr);
 	
 	// allocate a buffer to give to the system with the clipboard data.
-	HGLOBAL clip_buf = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, utf8chars_num);
+	HGLOBAL clip_buf = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, utf8str.size() + 1);
 
 	// copy the message buffer into the global buffer
-	memcpy(GlobalLock(clip_buf), utf8str, utf8chars_num);
+	memcpy(GlobalLock(clip_buf), utf8str.c_str(), utf8str.size() + 1);
 	GlobalUnlock(clip_buf);
 
 	// Write the data to the clipboard.

@@ -32,9 +32,9 @@ struct TextParser
 
 	enum ParserState parser_state = PARSER_READY;
 
-	void parse(const char* buf);
-	void parse_color(const char* buf);
-	void parse_hashcode(const char* buf);
+	void parse(const char input[RPM_BUF_SIZE]);
+	void parse_color(const char input[RPM_BUF_SIZE]);
+	void parse_hashcode(const char input[RPM_BUF_SIZE]);
 	void end_of_message();
 	void flush_message_buffer();
 };
