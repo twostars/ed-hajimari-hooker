@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "string_conv.h"
+#include "string_utils.h"
 
 std::wstring MultiByteToWideChar(UINT code_page, const char* input, size_t input_size)
 {
@@ -34,4 +34,24 @@ std::string WideCharToMultiByte(UINT code_page, const wchar_t* input, size_t inp
 std::string WideCharToMultiByte(UINT code_page, const std::wstring& input)
 {
 	return WideCharToMultiByte(code_page, input.c_str(), input.size());
+}
+
+size_t GetUtf8CharacterSize(const char utf8Char)
+{
+	// U+0000 to U+007F
+	if ((utf8Char & 0x80) == 0x00)
+		return 1;
+
+	// U+0080 to U+07FF 
+	if ((utf8Char & 0xE0) == 0xC0)
+		return 2;
+
+	// U+0800 to U+FFFF 
+	if ((utf8Char & 0xF0) == 0xE0)
+		return 3;
+
+	if (utf8Char == 0xF0)
+		return 4;
+
+	return 0; /* invalid */
 }

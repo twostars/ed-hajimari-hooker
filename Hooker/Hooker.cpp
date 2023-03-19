@@ -70,7 +70,7 @@ void on_breakpoint_loop(HANDLE game_process, HANDLE game_thread, CONTEXT* dbg_co
 	}
 
 	text_parser.buf_current_address = dbg_context->Rdi;
-	text_parser.parse(sjis);
+	text_parser.Parse(sjis);
 	memcpy(text_parser.prev_rpm_buf, sjis, RPM_BUF_SIZE);
 }
 

@@ -1,12 +1,226 @@
 #include "stdafx.h"
 #include "TextParser.h"
-#include "string_conv.h"
+#include "string_utils.h"
 
 thread_local char oldstr[MSG_BUF_SIZE + 1] = {};
 thread_local std::wstring wstr;
 thread_local std::string utf8str;
 
-void TextParser::parse(const char buf[RPM_BUF_SIZE])
+void TextParser::Parse(const char input[RPM_BUF_SIZE])
+{
+	// If the official parser skipped over anything, we should add it to our string
+	if (PreviousAddress != 0)
+	{
+		size_t len = buf_current_address - PreviousAddress;
+		if (len > 1)
+		{
+			for (size_t i = 1; i < len; i++)
+				OriginalInputString += prev_rpm_buf[i];
+		}
+	}
+
+	char currentChar = input[0];
+
+	PreviousAddress = buf_current_address;
+	if (currentChar != '\0')
+		OriginalInputString += currentChar;
+
+	if (currentChar < ' ')
+	{
+		// Note: Redundant switch cases are due to preserving parser order for comparison with the official logic
+		switch (currentChar)
+		{
+			case '\0':
+				// finished parsing?
+				Parse_EndOfMessage(currentChar);
+				FinishParsing();
+				break;
+
+			case '\1': // newline? handled with \n so probably
+			case '\n': // handled with \1
+			case '\2':
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\3':
+				// seems to generally act as some kind of flag, might be used for something in parsing
+				// but unclear at this time
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+
+			case '\6':
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+
+			case '\a':
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\b':
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+				
+			case '\v':
+			case '\f':
+			case '\x0f':
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\x10':
+				// TODO: this can (when some alternative string is present) atoi() a string length
+				// from the input and replace the destination text with the alternative string
+				// it will also trigger an end of message.
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\x11':
+			case '\x12':  // handled with \x11
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+
+			case '\x13':
+			case '\x14':
+			case '\x15':
+			case '\x16':
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+
+			case '\x17':
+				// seemingly an end of message
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\x18':
+				Parse_MessageFlag(currentChar); /* may not be specific to the message */
+				break;
+
+			case '\x19':
+				// TODO: prior text is atoi()'d and an end of message is triggered.
+				Parse_EndOfMessage(currentChar);
+				break;
+
+			case '\x1a':
+				// flag of some kind
+				break;
+		}
+	}
+	else
+	{
+		if (currentChar == '\\')
+		{
+			if (input[1] == 'n')
+			{
+				// TODO
+			}
+			else
+			{
+				// TODO
+			}
+		}
+		else if (currentChar != '#' /* || *(_BYTE *)(v26 + 9202) */)
+		{
+			Parse_Text(input);
+		}
+		else // if (currentChar == '#')
+		{
+			Parse_HashCode(input);
+		}
+	}
+
+	// old parser logic
+	parse(input);
+}
+
+void TextParser::Parse_MessageFlag(char flag)
+{
+	CurrentMessage.Flags.push_back(flag);
+}
+
+void TextParser::Parse_EndOfMessage(uint16_t type)
+{
+	if (CurrentMessage.Data.empty())
+		return;
+
+	CurrentMessage.EOMType = type;
+	Messages.push_back(CurrentMessage);
+	CurrentMessage = {};
+}
+
+void TextParser::Parse_HashCode(const char input[RPM_BUF_SIZE])
+{
+	std::string tmp;
+	for (size_t i = 1; i < RPM_BUF_SIZE; i++)
+	{
+		// if (((uint8_t)input[i] - 66) <= 35u)
+		if (input[i] > 'A')
+		{
+			// TODO: [, _, .... EeMBH
+		}
+		else
+		{
+			switch (input[i])
+			{
+				case 'V':
+					/* skipped */
+					return;
+
+				case 'I':
+				case 'i':
+				case 'P':
+				case 'T':
+				case 'W':
+				case 'w':
+				case 'K':
+				case 'k':
+				case 'F':
+				case 'S':
+				case 's':
+				case 'C':
+				case 'c':
+				case 'Z':
+				case 'R':
+				case 'x':
+				case 'y':
+				case 'X':
+				case 'Y':
+				case 'G':
+				case 'U':
+				case 'D':
+				case 'g':
+					CurrentMessage.Data = tmp;
+					Parse_EndOfMessage(MAKEWORD(input[0], input[i]));
+					return;
+
+				default:
+					tmp += input[i];
+			}
+		}
+	}
+}
+
+void TextParser::Parse_Text(const char input[RPM_BUF_SIZE])
+{
+	// Append each character or set of characters to the current message.
+	// Officially this checks the input argument to determine what type of string we're dealing with,
+	// for example: in the build I am working with, it's always 3 to indicate UTF-8 encoded strings.
+	// For now, while I'm implementing this, I will assume it's always the case, but I should probably change this after
+	// to simply consider this as text for it to append in the next loop iteration based on how far the official loop has progressed.
+	size_t utf8CharacterSize = GetUtf8CharacterSize(input[0]);
+	for (size_t i = 0; i < utf8CharacterSize; i++)
+		CurrentMessage.Data += input[i];
+}
+
+void TextParser::FinishParsing()
+{
+	// TODO: construct messages for clipboard
+	CopyToClipboard();
+}
+
+void TextParser::CopyToClipboard()
+{
+}
+
+void TextParser::parse(const char input[RPM_BUF_SIZE])
 {
 	if (defer_until_address != 0
 		&& buf_current_address < defer_until_address)
@@ -23,30 +237,30 @@ void TextParser::parse(const char buf[RPM_BUF_SIZE])
 	switch (parser_state)
 	{
 	case PARSER_READY:
-		switch (buf[0])
+		switch (input[0])
 		{
-			case '':
+			case '': // \15
 				parser_state = PARSER_READ_COLOR;
 				break;
 
 			case '#':
 				parser_state = PARSER_READ_HASHCODE;
-				parse(buf);
+				parse(input);
 				break;
 
 			default:
 				parser_state = PARSER_TEXT;
-				parse(buf);
+				parse(input);
 		}
 		break;
 
 	case PARSER_READ_COLOR:
-		parse_color(buf);
+		parse_color(input);
 		parser_state = PARSER_READY;
 		break;
 
 	case PARSER_READ_HASHCODE:
-		parse_hashcode(buf);
+		parse_hashcode(input);
 		parser_state = PARSER_READY;
 		break;
 
@@ -70,7 +284,7 @@ void TextParser::parse(const char buf[RPM_BUF_SIZE])
 
 		prev_msg_address = buf_current_address;
 
-		switch (buf[0])
+		switch (input[0])
 		{
 			case 0x1A:
 				msg_unk_1a = true;
@@ -84,9 +298,6 @@ void TextParser::parse(const char buf[RPM_BUF_SIZE])
 				end_of_message();
 				break;
 		}
-		break;
-
-	case PARSER_FINISHED:
 		break;
 	}
 }
