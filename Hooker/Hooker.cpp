@@ -1,8 +1,6 @@
-﻿// Hooker.cpp : Defines the entry point for the console application.
-//
-
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "TextParser.h"
+#include "process_utils.h"
 
 // 00000001403FCFC7 | 49:8BF8                  | mov rdi,r8                              |
 LPVOID relative_instruction_address_outer = (LPVOID)0x3FCFC7;
@@ -16,8 +14,6 @@ LPVOID instruction_address_loop = (LPVOID)0;
 LPCWSTR GAME_PATH = L"ed8_ps5_D3D11.exe";
 HANDLE game_process = NULL;
 HANDLE game_thread = NULL;
-
-unsigned char int3 = 0xCC;
 
 thread_local TextParser text_parser;
 
@@ -161,6 +157,7 @@ void set_breakpoint(HANDLE game_process, LPVOID instruction_address)
 
 	printf("Memory protection weakened.\n");
 
+	const BYTE int3 = 0xCC;
 	if(!WriteProcessMemory(game_process, instruction_address, &int3, 1, &b))
 	{
 		printf("Failed to set breakpoint.\n");
@@ -194,30 +191,6 @@ void debug_loop()
 		dispatch_event_handler(&event);
 		ContinueDebugEvent(event.dwProcessId, event.dwThreadId, DBG_CONTINUE);
 	}
-}
-
-BYTE* GetModuleBaseAddress(DWORD dwProcessID, const WCHAR* lpszModuleName)
-{
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwProcessID);
-    BYTE* moduleBaseAddress = nullptr;
-    if (hSnapshot != INVALID_HANDLE_VALUE)
-    {
-        MODULEENTRY32 ModuleEntry32 = { 0 };
-        ModuleEntry32.dwSize = sizeof(MODULEENTRY32);
-        if (Module32First(hSnapshot, &ModuleEntry32))
-        {
-            do
-            {
-                if (_wcsicmp(ModuleEntry32.szModule, lpszModuleName) == 0)
-                {
-                    moduleBaseAddress = ModuleEntry32.modBaseAddr;
-                    break;
-                }
-            } while (Module32Next(hSnapshot, &ModuleEntry32));
-        }
-        CloseHandle(hSnapshot);
-    }
-    return moduleBaseAddress;
 }
 
 void find_game()
