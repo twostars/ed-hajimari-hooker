@@ -11,6 +11,8 @@
 #include <tchar.h>
 #include <Windows.h>
 #include <TlHelp32.h>
-
+#include <string>
+#include <vector>
 
 // TODO: reference additional headers your program requires here
+#include "constants.h"

@@ -2,12 +2,7 @@
 //
 
 #include "stdafx.h"
-
-#include <string>
-#include <vector>
-
-const size_t RPM_BUF_SIZE = 8;
-const size_t MSG_BUF_SIZE = 8192;
+#include "TextParser.h"
 
 // 00000001403FCFC7 | 49:8BF8                  | mov rdi,r8                              |
 LPVOID relative_instruction_address_outer = (LPVOID)0x3FCFC7;
@@ -24,261 +19,12 @@ HANDLE game_thread = NULL;
 
 unsigned char int3 = 0xCC;
 
-enum ParserState
-{
-	PARSER_READY,
-	PARSER_READ_COLOR,
-	PARSER_READ_HASHCODE,
-	PARSER_TEXT,
-	PARSER_FINISHED
-};
-
-struct ParserContext
-{
-	DWORD_PTR buf_current_address = 0;
-	DWORD_PTR defer_until_address = 0;
-
-	unsigned int color = 0xffffffff;
-	
-	int face_id = -1;
-	int character_id = -1;
-
-	DWORD_PTR prev_msg_address = 0;
-	char prev_rpm_buf[RPM_BUF_SIZE] = {};
-
-	DWORD_PTR msg_start_address = 0;
-	char msg_buf[MSG_BUF_SIZE + 1] = {};
-	unsigned int msg_offset = 0;
-
-	bool msg_unk_1a = false;
-
-	enum ParserState parser_state = PARSER_READY;
-};
-
-thread_local ParserContext parser_context;
-
-char oldstr[MSG_BUF_SIZE + 1] = {};
-wchar_t wstr[MSG_BUF_SIZE + 1] = {};
-char utf8str[MSG_BUF_SIZE + 1] = {};
-
-void flush_message_buffer(ParserContext& ctx)
-{
-	// this case can occur at the very beginning of a message right after parsing a face ID but before any text has been parsed
-	if (ctx.msg_offset == 0)
-		return; // nothing to do !
-	
-	// null-terminate the buffer
-	ctx.msg_buf[ctx.msg_offset] = '\0';
-
-	// No change, don't bother updating
-	if (memcmp(ctx.msg_buf, oldstr, ctx.msg_offset) == 0)
-		return;
-
-	memcpy(oldstr, ctx.msg_buf, ctx.msg_offset);
-
-	const UINT CP_SHIFT_JIS = 932;
-	const DWORD LCID_JA_JA = 1041;
-
-	int wchars_num = MultiByteToWideChar(CP_UTF8, 0, ctx.msg_buf, -1, nullptr, 0);
-	if (wchars_num > MSG_BUF_SIZE)
-		return;
-
-	MultiByteToWideChar(CP_UTF8, 0, ctx.msg_buf, -1, wstr, wchars_num);
-
-	int utf8chars_num = WideCharToMultiByte(CP_SHIFT_JIS, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
-	if (utf8chars_num > MSG_BUF_SIZE)
-		return;
-
-	WideCharToMultiByte(CP_SHIFT_JIS, 0, wstr, wchars_num, utf8str, utf8chars_num, nullptr, nullptr);
-
-	HGLOBAL locale_ptr = GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
-	DWORD japanese = LCID_JA_JA;
-	memcpy(GlobalLock(locale_ptr), &japanese, sizeof(japanese));
-	GlobalUnlock(locale_ptr);
-	
-	// allocate a buffer to give to the system with the clipboard data.
-	HGLOBAL clip_buf = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, utf8chars_num);
-
-	// copy the message buffer into the global buffer
-	memcpy(GlobalLock(clip_buf), utf8str, utf8chars_num);
-	GlobalUnlock(clip_buf);
-
-	// Write the data to the clipboard.
-	if (!OpenClipboard(nullptr))
-	{
-		printf("Failed to open clipboard. (Error %d.)\n", GetLastError());
-		GlobalFree(locale_ptr);
-		GlobalFree(clip_buf);
-		goto cleanup;
-	}
-
-	if (!EmptyClipboard())
-	{
-		printf("Failed to empty clipboard. (Error %d.)\n", GetLastError());
-		GlobalFree(locale_ptr);
-		GlobalFree(clip_buf);
-		goto cleanup;
-	}
-
-	if (!SetClipboardData(CF_TEXT, clip_buf))
-	{
-		printf("Failed to set clipboard data. (Error %d.)\n", GetLastError());
-		GlobalFree(locale_ptr);
-		goto cleanup;
-	}
-
-	if(!SetClipboardData(CF_LOCALE, locale_ptr))
-	{
-		printf("Failed to set clipboard locale. (Error %d.)\n", GetLastError());
-		GlobalFree(locale_ptr);
-		goto cleanup;
-	}
-
-cleanup:
-	CloseClipboard();
-}
-
-void parse_color(ParserContext& ctx, char buf[])
-{
-	unsigned int offset = 1;
-	unsigned int start_offset = offset;
-	offset += 4; /* assume color codes are always 4 (hex) digits */
-
-	size_t length = (offset - start_offset);
-	std::vector<char> tmpBuffer(length + 1U, 0);
-	memcpy(&tmpBuffer[0], buf + start_offset, length);
-
-	ctx.color = std::strtoull(&tmpBuffer[0], nullptr, 16);
-	ctx.defer_until_address = ctx.buf_current_address + length + 1;
-}
-
-void parse_hashcode(ParserContext& ctx, char buf[])
-{
-	unsigned int offset = 1;
-	unsigned int start_offset = offset;
-	while(isdigit(buf[offset]))
-		++offset;
-
-	size_t length = (offset - start_offset);
-	std::vector<char> tmpBuffer(length + 1U, 0);
-	memcpy(&tmpBuffer[0], buf + start_offset, length);
-
-	// now i is at the offset of the first non-digit character, so we can see whether we parsed a face or a character id.
-	char code = buf[offset];
-	switch (code)
-	{
-		case 'P':
-			ctx.character_id = atoi(&tmpBuffer[0]);
-			break;
-
-		case 'F':
-			ctx.face_id = atoi(&tmpBuffer[0]);
-			break;
-
-		default:
-			printf("Parse failure: unknown hashcode %c, value %u\n", code, (unsigned int)atoi(&tmpBuffer[0]));
-	}
-
-	ctx.defer_until_address = ctx.buf_current_address + length + 2;
-}
-
-void end_of_message(ParserContext& ctx)
-{
-	flush_message_buffer(ctx);
-
-	ctx.prev_msg_address = 0;
-	ctx.parser_state = PARSER_FINISHED;
-}
-
-void parse_buf(ParserContext& ctx, char buf[])
-{
-	if (ctx.defer_until_address != 0
-		&& ctx.buf_current_address < ctx.defer_until_address)
-		return;
-
-	// This parser needs to mimic the official behaviour better
-	// Official behaviour iterates over the string and handles it character by character,
-	// parsing further depending on where it's at - but even when parsing out the message,
-	// it will still do that only 3 bytes at a time for appropriate characters.
-	// Its states may well be unnecessary.
-	// Note that each call of this method is triggered by each loop iteration
-	// or each main character it should process.
-	// Any that it has "skipped" will have been handled by its previous processing.
-	switch(ctx.parser_state)
-	{
-	case PARSER_READY:
-		switch (buf[0])
-		{
-			case '':
-				ctx.parser_state = PARSER_READ_COLOR;
-				break;
-
-			case '#':
-				ctx.parser_state = PARSER_READ_HASHCODE;
-				parse_buf(ctx, buf);
-				break;
-
-			default:
-				ctx.parser_state = PARSER_TEXT;
-				parse_buf(ctx, buf);
-		}
-		break;
-
-	case PARSER_READ_COLOR:
-		parse_color(ctx, buf);
-		ctx.parser_state = PARSER_READY;
-		break;
-
-	case PARSER_READ_HASHCODE:
-		parse_hashcode(ctx, buf);
-		ctx.parser_state = PARSER_READY;
-		break;
-
-	case PARSER_TEXT:
-		if (ctx.msg_start_address == 0)
-			ctx.msg_start_address = ctx.buf_current_address;
-
-		if (ctx.prev_msg_address != 0)
-		{
-			size_t len = ctx.buf_current_address - ctx.prev_msg_address;
-			if (ctx.msg_offset + len > MSG_BUF_SIZE)
-			{
-				printf("Parse failure: message buffer overflow.\n");
-			}
-			else
-			{
-				memcpy(ctx.msg_buf + ctx.msg_offset, ctx.prev_rpm_buf, len);
-				ctx.msg_offset += len;
-			}
-		}
-
-		ctx.prev_msg_address = ctx.buf_current_address;
-
-		switch (buf[0])
-		{
-			case 0x1A:
-				ctx.msg_unk_1a = true;
-				end_of_message(ctx);
-				break;
-
-			case 0:
-			case 1:
-			case 2:
-			case 3:
-				end_of_message(ctx);
-				break;
-		}
-		break;
-
-	case PARSER_FINISHED:
-		break;
-	}
-}
+thread_local TextParser text_parser;
 
 void on_breakpoint_outer(HANDLE game_process, HANDLE game_thread, CONTEXT* dbg_context)
 {
-	// Reset parser context on new text request
-	parser_context = {};
+	// Reset text parser on new text request
+	text_parser = {};
 
 	// Reset the context flags to write out in case the call to GetThreadContext changed the flags for some reason.
 	dbg_context->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -327,9 +73,9 @@ void on_breakpoint_loop(HANDLE game_process, HANDLE game_thread, CONTEXT* dbg_co
 		return;
 	}
 
-	parser_context.buf_current_address = dbg_context->Rdi;
-	parse_buf(parser_context, sjis);
-	memcpy(parser_context.prev_rpm_buf, sjis, RPM_BUF_SIZE);
+	text_parser.buf_current_address = dbg_context->Rdi;
+	text_parser.parse(sjis);
+	memcpy(text_parser.prev_rpm_buf, sjis, RPM_BUF_SIZE);
 }
 
 void on_breakpoint(HANDLE game_process, HANDLE game_thread)
