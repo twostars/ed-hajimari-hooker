@@ -69,9 +69,9 @@ void on_breakpoint_loop(HANDLE game_process, HANDLE game_thread, CONTEXT* dbg_co
 		return;
 	}
 
-	text_parser.buf_current_address = dbg_context->Rdi;
+	text_parser.CurrentAddress = dbg_context->Rdi;
 	text_parser.Parse(sjis);
-	memcpy(text_parser.prev_rpm_buf, sjis, RPM_BUF_SIZE);
+	memcpy(text_parser.PreviousInputBuffer, sjis, RPM_BUF_SIZE);
 }
 
 void on_breakpoint(HANDLE game_process, HANDLE game_thread)
