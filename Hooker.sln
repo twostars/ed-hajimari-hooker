@@ -5,6 +5,8 @@ VisualStudioVersion = 16.0.33328.57
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Hooker", "Hooker\Hooker.vcxproj", "{50152C85-B813-49FE-B87C-CD53B789B7CE}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ed-hajimari-hook", "ed-hajimari-hook\ed-hajimari-hook.vcxproj", "{E0ABAA70-0AA0-41E2-890F-1F10D1CD0981}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -15,6 +17,10 @@ Global
 		{50152C85-B813-49FE-B87C-CD53B789B7CE}.Debug|x64.Build.0 = Debug|x64
 		{50152C85-B813-49FE-B87C-CD53B789B7CE}.Release|x64.ActiveCfg = Release|x64
 		{50152C85-B813-49FE-B87C-CD53B789B7CE}.Release|x64.Build.0 = Release|x64
+		{E0ABAA70-0AA0-41E2-890F-1F10D1CD0981}.Debug|x64.ActiveCfg = Debug|x64
+		{E0ABAA70-0AA0-41E2-890F-1F10D1CD0981}.Debug|x64.Build.0 = Debug|x64
+		{E0ABAA70-0AA0-41E2-890F-1F10D1CD0981}.Release|x64.ActiveCfg = Release|x64
+		{E0ABAA70-0AA0-41E2-890F-1F10D1CD0981}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -2,12 +2,6 @@
 #include "TextParser.h"
 #include "process_utils.h"
 
-// 00000001403FCFC7 | 49:8BF8                  | mov rdi,r8                              |
-LPVOID relative_instruction_address_outer = (LPVOID)0x3FCFC7;
-
-// .text:00000000003FD0ED 0F B6 0F                                movzx   ecx, byte ptr [rdi]
-LPVOID relative_instruction_address_loop = (LPVOID)0x3FD0ED;
-
 LPVOID instruction_address_outer = (LPVOID)0;
 LPVOID instruction_address_loop = (LPVOID)0;
 
@@ -25,7 +19,7 @@ void on_breakpoint_outer(HANDLE game_process, HANDLE game_thread, CONTEXT* dbg_c
 	// Reset the context flags to write out in case the call to GetThreadContext changed the flags for some reason.
 	dbg_context->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 
-	// The instruction that we overwrote was `movzx ecx, byte ptr [eax]`, which is coded on 3 bytes, so we need to jump over the
+	// The instruction that we overwrote was `mov rdi, r8`, which is coded on 3 bytes, so we need to jump over the
 	// next two bytes which are garbage.
 	dbg_context->Rip += 2;
 
@@ -143,36 +137,29 @@ void dispatch_event_handler(LPDEBUG_EVENT event)
 	}
 }
 
-void set_breakpoint(HANDLE game_process, LPVOID instruction_address)
-{
-	SIZE_T b;
-	DWORD newprot = PAGE_EXECUTE_READWRITE;
-	DWORD oldprot;
 
-	if(!VirtualProtectEx(game_process, instruction_address, 1, newprot, &oldprot))
+void set_breakpoint(HANDLE hProcess, LPVOID lpInstructionAddress)
+{
+	DWORD flOldProtection, flOldProtection2;
+
+	if (!VirtualProtectEx(hProcess, lpInstructionAddress, 1, PAGE_EXECUTE_READWRITE, &flOldProtection))
 	{
-		printf("Failed to weaken memory protection. (Error %d.)\n", GetLastError());
+		printf("Failed to weaken memory protection. (Error %u)\n", GetLastError());
 		exit(1);
 	}
 
-	printf("Memory protection weakened.\n");
-
-	const BYTE int3 = 0xCC;
-	if(!WriteProcessMemory(game_process, instruction_address, &int3, 1, &b))
+	const BYTE INT3 = 0xCC;
+	if (!WriteProcessMemory(hProcess, lpInstructionAddress, &INT3, 1, nullptr))
 	{
 		printf("Failed to set breakpoint.\n");
 		exit(1);
 	}
 
-	printf("Breakpoint set.\n");
-
-	if(!VirtualProtectEx(game_process, instruction_address, 1, oldprot, &newprot))
+	if (!VirtualProtectEx(hProcess, lpInstructionAddress, 1, flOldProtection, &flOldProtection2))
 	{
-		printf("Failed to reset memory protection. (Error %d.)\n", GetLastError());
+		printf("Failed to reset memory protection. (Error %u)\n", GetLastError());
 		exit(1);
 	}
-
-	printf("Memory protection restored.\n");
 }
 
 void debug_loop()
@@ -246,8 +233,8 @@ void find_game()
 		exit(1);
 	}
 
-	instruction_address_outer = (LPVOID)((ULONGLONG)module_base_address + (ULONGLONG)relative_instruction_address_outer);
-	instruction_address_loop = (LPVOID)((ULONGLONG)module_base_address + (ULONGLONG)relative_instruction_address_loop);
+	instruction_address_outer = (LPVOID)((ULONGLONG)module_base_address + (ULONGLONG)RELATIVE_INSTRUCTION_ADDRESS_OUTER);
+	instruction_address_loop = (LPVOID)((ULONGLONG)module_base_address + (ULONGLONG)RELATIVE_INSTRUCTION_ADDRESS_LOOP);
 
 	if(!DebugActiveProcess(pe.th32ProcessID))
 	{

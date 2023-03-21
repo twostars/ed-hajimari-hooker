@@ -2,7 +2,7 @@
 #include "TextParser.h"
 #include "string_utils.h"
 
-void TextParser::Parse(const char input[RPM_BUF_SIZE])
+void TextParser::Parse(const char* input)
 {
 	// If the official parser skipped over anything, we should handle it appropriately.
 	if (PreviousAddress != 0)

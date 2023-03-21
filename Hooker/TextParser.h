@@ -2,6 +2,9 @@
 
 #include "constants.h"
 
+#include <string>
+#include <vector>
+
 struct TextParser
 {
 	// We don't know this until we're done with parsing
@@ -47,7 +50,7 @@ struct TextParser
 	MessageSequenceEntry CurrentMessage;
 	std::vector<MessageSequenceEntry> MessageSequence;
 
-	void Parse(const char input[RPM_BUF_SIZE]);
+	void Parse(const char* input);
 	void AddMessageFlag(char flag);
 	void HandleEndOfMessage(char type);
 	void HandlePreviousInput(const char* previous_input, size_t len);
