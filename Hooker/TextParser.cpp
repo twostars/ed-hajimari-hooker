@@ -187,8 +187,6 @@ void TextParser::CopyToClipboard()
 	if (constructedMessage == PreviousMessage)
 		return;
 
-	PreviousMessage = constructedMessage;
-
 	auto utf8str = WideCharToMultiByte(CP_SHIFT_JIS, constructedMessage);
 
 	// Write the data to the clipboard.
@@ -244,6 +242,8 @@ void TextParser::CopyToClipboard()
 					printf("Failed to set clipboard locale. (Error %u)\n", GetLastError());
 					GlobalFree(locale_ptr);
 				}
+
+				PreviousMessage = constructedMessage;
 			}
 		}
 	}
