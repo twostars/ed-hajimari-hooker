@@ -55,3 +55,27 @@ size_t GetUtf8CharacterSize(const char utf8Char)
 
 	return 0; /* invalid */
 }
+
+bool IsJapaneseText(const std::wstring& input)
+{
+	for (auto itr = input.begin(); itr != input.end(); ++itr)
+	{
+		auto& c = *itr;
+
+		// \u3040-\u30ff
+		if ((c >= L'\u3040' && c <= L'\u30ff')
+			// \u3400-\u4dbf
+			|| (c >= L'\u3400' && c <= L'\u4dbf')
+			// \u4e00-\u9fff
+			|| (c >= L'\u4e00' && c <= L'\u9fff')
+			// \uf900-\ufaff
+			|| (c >= L'\uf900' && c <= L'\ufaff')
+			// \uff66-\uff9f
+			|| (c >= L'\uff66' && c <= L'\uff9f')
+			// \u3131-\ud79d
+			|| (c >= L'\u3131' && c <= L'\ud79d'))
+			return true;
+	}
+
+	return false;
+}

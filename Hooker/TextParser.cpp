@@ -7,10 +7,8 @@ void TextParser::Parse(const char* input)
 	// If the official parser skipped over anything, we should handle it appropriately.
 	if (PreviousAddress != 0)
 	{
-		// We only care if we skipped more than 1 character.
 		size_t len = CurrentAddress - PreviousAddress;
-		if (len > 1)
-			HandlePreviousInput(PreviousInputBuffer, len);
+		HandlePreviousInput(PreviousInputBuffer, len);
 	}
 
 	char currentChar = input[0];
@@ -184,7 +182,8 @@ void TextParser::CopyToClipboard()
 			constructedMessage += MultiByteToWideChar(CP_UTF8, msg.Data) + L'\n';
 	}
 
-	if (constructedMessage == PreviousMessage)
+	if (constructedMessage == PreviousMessage
+		|| !IsJapaneseText(constructedMessage))
 		return;
 
 	auto utf8str = WideCharToMultiByte(CP_SHIFT_JIS, constructedMessage);
